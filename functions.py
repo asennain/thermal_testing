@@ -1,13 +1,70 @@
 import time
-from KeithleyConnect import instrument_connect, instrument_write
-from KeithleyConnect import instrument_query, instrument_write
 import csv
-import time
-import serial
-import socket
+from KeithleyConnect import instrument_connect, instrument_write
+from KeithleyConnect import instrument_query
 
 
-def connect_keithley(ip_address: str, channels: str, data_socket):
+def connect_keithley_temp_only(ip_address: str, channels: str, data_socket):
+    """Used for reading one temperature channel only."""
+    channels_list = [channel.strip() for channel in channels.split(",")]
+    last_channel_string = channels_list[0]
+    print(f"Last channel: {last_channel_string}")
+
+    # ***************INSTRUMENT SET UP***************
+    instrument_connect(data_socket, ip_address, 5025, 10000, 0, 1)
+    # reset the device
+    instrument_write(data_socket, "*RST")
+
+    # define the measurement channels
+
+    # define the scan list, set scan count to infinite, and channel delay of 75 um
+    instrument_write(
+        data_socket, ":ROUTe:SCAN:CRE (@{0})".format(last_channel_string)
+    )  # Create channels
+
+    # Infinite scan count
+    instrument_write(data_socket, ":ROUTe:SCAN:COUN:SCAN 0")
+
+    instrument_write(
+        data_socket, ":ROUTe:DEL 0.0002, (@{0})".format(last_channel_string)
+    )  # Channel delay
+    instrument_write(data_socket, ":ROUTe:SCAN:INT .05")  # Scan to scan interval
+
+    # choose the buffer and assign all data to the buffer after clearing it
+    instrument_write(data_socket, 'TRACe:CLEar, "defbuffer1"')
+    instrument_write(data_socket, ':TRAC:FILL:MODE CONT, "defbuffer1"')
+    instrument_write(data_socket, ':ROUT:SCAN:BUFF "defbuffer1"')
+
+    #! Temperature settings only
+    instrument_write(data_socket, "FUNC 'TEMP', (@{0})".format(last_channel_string))
+    instrument_write(data_socket, "TEMP:TRAN TC, (@{0})".format(last_channel_string))
+    instrument_write(data_socket, "TEMP:TC:TYPE K, (@{0})".format(last_channel_string))
+
+    instrument_write(
+        data_socket, "TEMP:DEL:AUTO ON, (@{0})".format(last_channel_string)
+    )
+
+    instrument_write(data_socket, "TEMP:UNIT CELS, (@{0})".format(last_channel_string))
+    instrument_write(data_socket, "TEMP:NPLC 1, (@{0})".format(last_channel_string))
+    instrument_write(data_socket, "TEMP:AZER OFF, (@{0})".format(last_channel_string))
+    instrument_write(
+        data_socket, "TEMP:LINE:SYNC OFF, (@{0})".format(last_channel_string)
+    )
+
+    #! Specify internal junction
+    instrument_write(
+        data_socket, "TEMP:TC:RJUN:RSEL INT, (@{0})".format(last_channel_string)
+    )
+
+    # enable the graph to plot the data
+    instrument_write(data_socket, ":DISP:SCR HOME")
+    instrument_write(data_socket, "DISP:WATC:CHAN (@{0})".format(last_channel_string))
+    instrument_write(data_socket, ":DISP:SCR GRAP")
+
+
+def connect_keithley_optional_temp(
+    ip_address: str, channels: str, data_socket, measure_temp: bool
+):
     """****************************INSTRUMENT SETUP****************************"""
     """***********************************************************************"""
     """*********MAKE SURE THE KEITHLEY IS SET TO SCPI TO COMMUNITCATE*********"""
@@ -18,17 +75,20 @@ def connect_keithley(ip_address: str, channels: str, data_socket):
     # establish connection to the LAN socket. initialize and connect to the Keithley
     # Close the connection if one already exists
     # Establish a TCP/IP socket object
-    instrument_connect(data_socket, ip_address, 5025, 10000, 0, 1)
 
-    """***************INSTRUMENT SET UP***************"""
+    channels_list = [channel.strip() for channel in channels.split(",")]
+    all_but_last_list = channels_list[:-1]
+    all_but_last_string = ", ".join(all_but_last_list)
+    last_channel_string = channels_list[-1]
+
+    print(f"All channels except last: {all_but_last_string}")
+    print(f"Last channel: {last_channel_string}")
+
+    instrument_connect(data_socket, ip_address, 5025, 10000, 0, 1)
     # reset the device
     instrument_write(data_socket, "*RST")
 
-    # define the measurement channels
-
-    channel_count = len(channels.split(","))
-
-    # define the scan list, set scan count to infinite, and channel delay of 75 um
+    #! Scan count and basic config same for volt and temp channels
     instrument_write(
         data_socket, ":ROUTe:SCAN:CRE (@{0})".format(channels)
     )  # Create channels
@@ -43,37 +103,120 @@ def connect_keithley(ip_address: str, channels: str, data_socket):
     instrument_write(data_socket, ':TRAC:FILL:MODE CONT, "defbuffer1"')
     instrument_write(data_socket, ':ROUT:SCAN:BUFF "defbuffer1"')
 
-    # # define the channel functions
-    instrument_write(data_socket, "FUNC 'VOLT:DC', (@{0})".format(channels))
+    if measure_temp == True:
+        """***************CHANNEL SET UP***************"""
+        #! VOLT:DC channels only
+        # # define the channel functions
+        instrument_write(
+            data_socket, "FUNC 'VOLT:DC', (@{0})".format(all_but_last_string)
+        )
 
-    # # define channel parameters such as range to 1 volt, autozero off, and line sync on
-    instrument_write(data_socket, "VOLT:DC:RANG 1, (@{0})".format(channels))  # Range
-    instrument_write(
-        data_socket, "VOLT:DC:AZER OFF, (@{0})".format(channels)
-    )  # Auto-zero off
-    instrument_write(
-        data_socket, "VOLT:DC:LINE:SYNC ON, (@{0})".format(channels)
-    )  # Line sync on
-    instrument_write(
-        data_socket, "VOLT:DC:DEL:AUTO ON, (@{0})".format(channels)
-    )  # Auto-delay off
-    instrument_write(
-        data_socket, ":SENS:VOLT:DC:NPLC 1, (@{0})".format(channels)
-    )  # NPLC
-    instrument_write(
-        data_socket, "VOLT:DC:INP MOHM10, (@{0})".format(channels)
-    )  # Input impedance
+        # # define channel parameters such as range to 1 volt, autozero off, and line sync on
+        instrument_write(
+            data_socket, "VOLT:DC:RANG 1, (@{0})".format(all_but_last_string)
+        )  # Range
+        instrument_write(
+            data_socket, "VOLT:DC:AZER OFF, (@{0})".format(all_but_last_string)
+        )  # Auto-zero off
+        instrument_write(
+            data_socket, "VOLT:DC:LINE:SYNC ON, (@{0})".format(all_but_last_string)
+        )  # Line sync on
+        instrument_write(
+            data_socket, "VOLT:DC:DEL:AUTO ON, (@{0})".format(all_but_last_string)
+        )  # Auto-delay off
+        instrument_write(
+            data_socket, ":SENS:VOLT:DC:NPLC 1, (@{0})".format(all_but_last_string)
+        )  # NPLC
+        instrument_write(
+            data_socket, "VOLT:DC:INP MOHM10, (@{0})".format(all_but_last_string)
+        )  # Input impedance
 
-    # enable the graph to plot the data
-    instrument_write(data_socket, ":DISP:SCR HOME")
-    instrument_write(data_socket, "DISP:WATC:CHAN (@{0})".format(channels))
-    instrument_write(data_socket, ":DISP:SCR GRAP")
+        #! Temperature settings only
+        instrument_write(data_socket, "FUNC 'TEMP', (@{0})".format(last_channel_string))
+        instrument_write(
+            data_socket, "TEMP:TRAN TC, (@{0})".format(last_channel_string)
+        )
+        instrument_write(
+            data_socket, "TEMP:TC:TYPE K, (@{0})".format(last_channel_string)
+        )
+
+        instrument_write(
+            data_socket, "TEMP:DEL:AUTO ON, (@{0})".format(last_channel_string)
+        )
+
+        instrument_write(
+            data_socket, "TEMP:UNIT CELS, (@{0})".format(last_channel_string)
+        )
+        instrument_write(data_socket, "TEMP:NPLC 1, (@{0})".format(last_channel_string))
+        instrument_write(
+            data_socket, "TEMP:AZER OFF, (@{0})".format(last_channel_string)
+        )
+        instrument_write(
+            data_socket, "TEMP:LINE:SYNC OFF, (@{0})".format(last_channel_string)
+        )
+        #! Specify internal junction
+        instrument_write(
+            data_socket, "TEMP:TC:RJUN:RSEL INT, (@{0})".format(last_channel_string)
+        )
+
+        # enable the graph to plot the data
+        instrument_write(data_socket, ":DISP:SCR HOME")
+        instrument_write(data_socket, "DISP:WATC:CHAN (@{0})".format(channels))
+        instrument_write(data_socket, ":DISP:SCR GRAP")
+
+    else:  #! No temp, only VOLT:DC channels
+        """***************CHANNEL SET UP***************"""
+
+        # Create channels
+        instrument_write(data_socket, ":ROUTe:SCAN:CRE (@{0})".format(channels))
+
+        # Infinite scan count
+        instrument_write(data_socket, ":ROUTe:SCAN:COUN:SCAN 0")
+
+        # Channel delay
+        instrument_write(data_socket, ":ROUTe:DEL 0.0002, (@{0})".format(channels))
+
+        instrument_write(data_socket, ":ROUTe:SCAN:INT .05")  # Scan to scan interval
+
+        # choose the buffer and assign all data to the buffer after clearing it
+        instrument_write(data_socket, 'TRACe:CLEar, "defbuffer1"')
+        instrument_write(data_socket, ':TRAC:FILL:MODE CONT, "defbuffer1"')
+        instrument_write(data_socket, ':ROUT:SCAN:BUFF "defbuffer1"')
+
+        # # define the channel functions
+        instrument_write(data_socket, "FUNC 'VOLT:DC', (@{0})".format(channels))
+
+        # # define channel parameters such as range to 1 volt, autozero off, and line sync on
+        instrument_write(
+            data_socket, "VOLT:DC:RANG 1, (@{0})".format(channels)
+        )  # Range
+        instrument_write(
+            data_socket, "VOLT:DC:AZER OFF, (@{0})".format(channels)
+        )  # Auto-zero off
+        instrument_write(
+            data_socket, "VOLT:DC:LINE:SYNC ON, (@{0})".format(channels)
+        )  # Line sync on
+        instrument_write(
+            data_socket, "VOLT:DC:DEL:AUTO ON, (@{0})".format(channels)
+        )  # Auto-delay off
+        instrument_write(
+            data_socket, ":SENS:VOLT:DC:NPLC 1, (@{0})".format(channels)
+        )  # NPLC
+        instrument_write(
+            data_socket, "VOLT:DC:INP MOHM10, (@{0})".format(channels)
+        )  # Input impedance
+
+        # enable the graph to plot the data
+        instrument_write(data_socket, ":DISP:SCR HOME")
+        instrument_write(data_socket, "DISP:WATC:CHAN (@{0})".format(channels))
+        instrument_write(data_socket, ":DISP:SCR GRAP")
 
 
 def stop_trail_export_csv(
     file_name, directory_name, data_socket, channels, serial_port
 ):
     readings_count = int(instrument_query(data_socket, "TRACe:ACTual?", 16).rstrip())
+    #! total number of readings should be even, if not then one reading is larger than the other for two channels, so data will not be recorded and is skipped
     if readings_count % 2 == True:
         readings_count -= 1
 
@@ -133,11 +276,8 @@ def step_down(
 def heat_bed(temp: int, ser):
     time.sleep(10)
     #! Change bed temp
-    i = 1
-    while i <= 10:
-        ser.write(f"M140 S30{int(temp)}\n".encode())
-        time.sleep(180)
-        i += 1
+    ser.write(f"M140 S{int(temp)}\n".encode())
+    time.sleep(900)
 
 
 def collect_repeated_data(
@@ -185,3 +325,30 @@ def collect_repeated_data(
         )
 
         i += 1
+
+
+def heat_bed_collect_data(
+    TEMP_LIST: list,
+    folder_path: str,
+    channels: str,
+    ip_address: str,
+    data_socket,
+    ser,
+    trial_name,
+):
+    instrument_write(data_socket, "INIT")
+    time.sleep(1)
+
+    for TEMP in TEMP_LIST:
+        heat_bed(temp=TEMP, ser=ser)
+
+    #! Stop data collection
+    instrument_write(data_socket, "ABORT")
+
+    stop_trail_export_csv(
+        file_name=f"{trial_name}",
+        directory_name=f"{folder_path}\\",
+        data_socket=data_socket,
+        channels=channels,
+        serial_port=ser,
+    )
