@@ -5,7 +5,7 @@ from functions import *
 from KeithleyConnect import *
 from constants import TEMP_LIST
 
-# Another comment
+# Another  comment
 # try:
 channels = "108, 110, 112"
 ip_address = "169.254.3.79"
