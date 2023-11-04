@@ -1,4 +1,5 @@
 import time
+import os
 import csv
 from KeithleyConnect import instrument_connect, instrument_write
 from KeithleyConnect import instrument_query
@@ -23,12 +24,12 @@ def connect_keithley_temp_only(ip_address: str, channels: str, data_socket):
     )  # Create channels
 
     # Infinite scan count
-    instrument_write(data_socket, ":ROUTe:SCAN:COUN:SCAN 0")
+    instrument_write(data_socket, ":ROUTe:SCAN:COUN:SCAN 100,000,000")
 
     instrument_write(
         data_socket, ":ROUTe:DEL 0.0002, (@{0})".format(last_channel_string)
     )  # Channel delay
-    instrument_write(data_socket, ":ROUTe:SCAN:INT .05")  # Scan to scan interval
+    instrument_write(data_socket, ":ROUTe:SCAN:INT .1")  # Scan to scan interval
 
     # choose the buffer and assign all data to the buffer after clearing it
     instrument_write(data_socket, 'TRACe:CLEar, "defbuffer1"')
@@ -65,11 +66,9 @@ def connect_keithley_temp_only(ip_address: str, channels: str, data_socket):
 def connect_keithley_optional_temp(
     ip_address: str, channels: str, data_socket, measure_temp: bool
 ):
-    """****************************INSTRUMENT SETUP****************************"""
-    """***********************************************************************"""
-    """*********MAKE SURE THE KEITHLEY IS SET TO SCPI TO COMMUNITCATE*********"""
-    """***********************************************************************"""
-    """****************************INSTRUMENT CONNECTION****************************"""
+    """Used for reading mutliple channels, if reading temp set measure_temp = True. If reading one temp only,
+    then use function connect_keithley_temp_only."""
+
     #! Go into Windows and set the Ethernet connection to manual
     # define the instrament's IP address. the port is always 5025 for LAN connection.
     # establish connection to the LAN socket. initialize and connect to the Keithley
@@ -94,9 +93,9 @@ def connect_keithley_optional_temp(
     )  # Create channels
     instrument_write(data_socket, ":ROUTe:SCAN:COUN:SCAN 0")  # Infinite scan count
     instrument_write(
-        data_socket, ":ROUTe:DEL 0.0002, (@{0})".format(channels)
+        data_socket, ":ROUTe:DEL 0, (@{0})".format(channels)
     )  # Channel delay
-    instrument_write(data_socket, ":ROUTe:SCAN:INT .05")  # Scan to scan interval
+    instrument_write(data_socket, ":ROUTe:SCAN:INT .2")  # Scan to scan interval
 
     # choose the buffer and assign all data to the buffer after clearing it
     instrument_write(data_socket, 'TRACe:CLEar, "defbuffer1"')
@@ -171,12 +170,14 @@ def connect_keithley_optional_temp(
         instrument_write(data_socket, ":ROUTe:SCAN:CRE (@{0})".format(channels))
 
         # Infinite scan count
-        instrument_write(data_socket, ":ROUTe:SCAN:COUN:SCAN 0")
+        instrument_write(
+            data_socket, ":ROUTe:SCAN:COUN:SCAN 100,000,000"
+        )  # i smell funny
 
         # Channel delay
         instrument_write(data_socket, ":ROUTe:DEL 0.0002, (@{0})".format(channels))
 
-        instrument_write(data_socket, ":ROUTe:SCAN:INT .05")  # Scan to scan interval
+        instrument_write(data_socket, ":ROUTe:SCAN:INT .1")  # Scan to scan interval
 
         # choose the buffer and assign all data to the buffer after clearing it
         instrument_write(data_socket, 'TRACe:CLEar, "defbuffer1"')
@@ -243,6 +244,9 @@ def stop_trail_export_csv(
         end_index += channel_count
         accumulated_readings += channel_count
 
+    if not os.path.exists(f"{directory_name}"):
+        os.makedirs(f"{directory_name}")
+
     newFile = open("{0}{1}.csv".format(directory_name, file_name), "w", newline="")
     newWriter = csv.writer(newFile, dialect="excel")
     for i in range(len(Data)):
@@ -281,26 +285,27 @@ def heat_bed(temp: int, ser):
 
 
 def collect_repeated_data(
-    temperature_alias: str,
-    iterations: int,
+    weight_ratio_and_plasticizer: str,
+    step_iterations: int,
+    trial_iterations: int,
     increment_distance: float,
     time_interval: int,
     folder_path: str,
-    channel_count: int,
     channels: str,
-    ip_address: str,
     data_socket,
     ser,
 ):
     i = 1
-    while i <= 100:  # Parameter in range() is how many trials are being repeated
+    while (
+        i <= trial_iterations
+    ):  # Parameter in range() is how many trials are being repeated
         # open ports, connect instruments
 
         instrument_write(data_socket, "INIT")
         time.sleep(1)
 
         step_down(
-            iterations=iterations,
+            iterations=step_iterations,
             serial_port=ser,
             increment_distance=increment_distance,
             time_interval=time_interval,
@@ -317,7 +322,7 @@ def collect_repeated_data(
         #! total number of readings should be even, if not then one reading is larger than the other for two channels, so data will not be recorded and is skipped
 
         stop_trail_export_csv(
-            file_name=f"{temperature_alias}E{i}",
+            file_name=f"{weight_ratio_and_plasticizer}_trial_{i}",
             directory_name=f"{folder_path}\\",
             data_socket=data_socket,
             channels=channels,
