@@ -8,7 +8,7 @@ from constants import TEMP_LIST
 # Another  comment
 # try:
 channels = "108, 110, 112"
-ip_address = "169.254.3.79"
+ip_address = "169.254.124.238"
 channel_count = len(channels.split(","))
 folder_path = r"D:\Abdul Sennain\thermal_testing_data"
 
