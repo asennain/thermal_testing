@@ -6,7 +6,7 @@ from KeithleyConnect import instrument_query
 
 
 def connect_keithley_temp_only(ip_address: str, channels: str, data_socket):
-    """Used for reading one temperature channel only."""
+    """Used for reading one temperature channel only. If reading multiple channels, use function below."""
     channels_list = [channel.strip() for channel in channels.split(",")]
     last_channel_string = channels_list[0]
     print(f"Last channel: {last_channel_string}")
@@ -66,8 +66,7 @@ def connect_keithley_temp_only(ip_address: str, channels: str, data_socket):
 def connect_keithley_optional_temp(
     ip_address: str, channels: str, data_socket, measure_temp: bool
 ):
-    """Used for reading mutliple channels, if reading temp set measure_temp = True. If reading one temp only,
-    then use function connect_keithley_temp_only."""
+    """Used for reading mutliple channels, if reading temperature set measure_temp=True. If not reading temperature set temp=False. If reading one temp only, then use function connect_keithley_temp_only."""
 
     #! Go into Windows and set the Ethernet connection to manual
     # define the instrament's IP address. the port is always 5025 for LAN connection.
